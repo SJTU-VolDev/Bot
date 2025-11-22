@@ -1,3 +1,6 @@
+
+
+      
 """
 志愿者排表系统 - 交互式主控程序
 直接调用10个核心处理程序
@@ -186,25 +189,25 @@ class SimpleInteractiveSchedulingSystem:
                 # 基本信息核查和收集
                 from src.scheduling.pre_checker import PreChecker
                 checker = PreChecker()
-                return checker.check_all_files()
+                return checker.run_pre_check()
 
             elif program_num == 4:
                 # 正式普通志愿者和储备志愿者拆分
                 from src.scheduling.splitter import VolunteerSplitter
                 splitter = VolunteerSplitter()
-                return splitter.split_volunteers()
+                return splitter.run_split()
 
             elif program_num == 5:
                 # 家属志愿者资格审查
                 from src.scheduling.family_checker import FamilyChecker
                 checker = FamilyChecker()
-                return checker.check_family_volunteers()
+                return checker.run_check()
 
             elif program_num == 6:
                 # 情侣志愿者资格核查
                 from src.scheduling.couple_checker import CoupleChecker
                 checker = CoupleChecker()
-                return checker.check_couple_volunteers()
+                return checker.run_check()
 
             elif program_num == 7:
                 # 小组划分及组长分配
@@ -341,3 +344,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+    

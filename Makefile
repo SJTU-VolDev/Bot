@@ -133,22 +133,13 @@ format-code:
 
 analyze-data:
 	@echo "分析输入数据..."
-	@python -c "
-import pandas as pd
-import os
-from pathlib import Path
-
-# 分析输入目录
-input_dir = Path('input')
-if input_dir.exists():
-    print('=== 输入文件分析 ===')
-    for file_path in input_dir.rglob('*.xlsx'):
-        if not file_path.name.startswith('~$'):
-            try:
-                df = pd.read_excel(file_path)
-                print(f'{file_path.relative_to(input_dir)}: {len(df)} 行, {len(df.columns)} 列')
-            except Exception as e:
-                print(f'{file_path.relative_to(input_dir)}: 读取失败 - {e}')
+	@python -c "\
+import pandas as pd; \
+import os; \
+from pathlib import Path; \
+input_dir = Path('input'); \
+print('=== 输入文件分析 ===') if input_dir.exists() else None; \
+[print(f'{file_path.relative_to(input_dir)}: {len(pd.read_excel(file_path))} 行, {len(pd.read_excel(file_path).columns)} 列') if not file_path.name.startswith('~$$') else None for file_path in input_dir.rglob('*.xlsx')] if input_dir.exists() else None \
 "
 
 # 快速开始命令

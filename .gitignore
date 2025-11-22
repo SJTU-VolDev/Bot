@@ -129,7 +129,7 @@ logs/
 
 # 报告文件
 reports/
-*.txt
+
 
 # 临时文件
 temp/

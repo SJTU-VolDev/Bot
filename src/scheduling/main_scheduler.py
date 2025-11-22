@@ -1,3 +1,4 @@
+      
 """
 排表主程序 - 核心调度引擎
 负责将所有志愿者分配到各个小组中，生成最终的排班总表
@@ -820,25 +821,60 @@ class VolunteerScheduler:
 
             # 处理自由分配的绑定集合
             for binding in free_bindings:
-                # 寻找合适的小组
-                suitable_groups = [g for g in self.groups.values()
-                                 if g.get_remaining_capacity() >= binding.get_size()]
+                target_group = None
+                already_placed_count = 0
+                
+                # 检查绑定集合中是否有已分配的成员（通常是组长）
+                for member in binding.members:
+                    if member.student_id in self.placed_student_ids:
+                        already_placed_count += 1
+                        # 找到该成员所在的小组
+                        for group in self.groups.values():
+                            if member in group.members:
+                                target_group = group
+                                self.logger.info(f"绑定集合 {binding.binding_id} 中成员 {member.name}({member.student_id}) 已在小组 {group.group_id}，其他成员将分配到此小组")
+                                break
+                        if target_group:
+                            break
+                
+                # 如果没有找到已分配的成员，按原逻辑寻找合适的小组
+                if not target_group:
+                    # 计算未分配成员数量
+                    unplaced_count = sum(1 for m in binding.members if m.student_id not in self.placed_student_ids)
+                    
+                    suitable_groups = [g for g in self.groups.values()
+                                     if g.get_remaining_capacity() >= unplaced_count]
 
-                if not suitable_groups:
-                    self.logger.warning(f"绑定集合 {binding.binding_id} 无法找到合适的小组")
+                    if not suitable_groups:
+                        self.logger.warning(f"绑定集合 {binding.binding_id} 无法找到合适的小组（需要{unplaced_count}个空位）")
+                        continue
+
+                    # 选择剩余空位最多的小组
+                    target_group = max(suitable_groups, key=lambda g: g.get_remaining_capacity())
+                
+                # 检查目标小组是否有足够空位容纳未分配的成员
+                unplaced_members = [m for m in binding.members if m.student_id not in self.placed_student_ids]
+                if target_group.get_remaining_capacity() < len(unplaced_members):
+                    self.logger.warning(f"绑定集合 {binding.binding_id} 目标小组 {target_group.group_id} 空位不足（需要{len(unplaced_members)}，剩余{target_group.get_remaining_capacity()}）")
+                    # 尝试分配能分配的成员
+                    for member in unplaced_members:
+                        if target_group.get_remaining_capacity() > 0:
+                            target_group.add_member(member)
+                            self.placed_student_ids.add(member.student_id)
+                        else:
+                            self.logger.warning(f"小组 {target_group.group_id} 已满，无法分配成员 {member.name}({member.student_id})")
                     continue
 
-                # 选择剩余空位最多的小组
-                best_group = max(suitable_groups, key=lambda g: g.get_remaining_capacity())
-
+                # 分配未分配的成员到目标小组
                 assigned_count = 0
                 for member in binding.members:
                     if member.student_id not in self.placed_student_ids:
-                        best_group.add_member(member)
+                        target_group.add_member(member)
                         self.placed_student_ids.add(member.student_id)
                         assigned_count += 1
 
-                self.logger.info(f"自由分配绑定集合 {binding.binding_id}: {assigned_count}/{binding.get_size()} 成员分配到小组 {best_group.group_id}")
+                total_size = binding.get_size()
+                self.logger.info(f"绑定集合 {binding.binding_id}: {assigned_count} 新成员 + {already_placed_count} 已有成员 = {total_size} 人分配到小组 {target_group.group_id}")
 
             self.logger.info("绑定集合分配完成")
             return True
@@ -1800,3 +1836,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+    

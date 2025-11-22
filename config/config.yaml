@@ -1,0 +1,193 @@
+# 志愿者排表系统配置文件
+# 所有的路径、文件名、算法参数、颜色代码等都通过此文件集中管理
+
+# 路径配置
+paths:
+  # 基础路径
+  base_path: "."  # 项目根目录
+
+  # 输入数据路径
+  input_dir: "input"
+  groups_dir: "input/团体"  # 团体志愿者表格文件夹
+  interview_dir: "input/面试打分表"  # 面试打分表文件夹
+
+  # 流水线数据路径
+  pipeline_dir: "pipeline"
+  interview_results_dir: "pipeline/01_interview_results"  # 面试结果收集模块输出
+  scheduling_prep_dir: "pipeline/02_scheduling_preparation"  # 排表准备阶段输出
+
+  # 输出数据路径
+  output_dir: "output"
+  groups_output_dir: "output/各小组名单"  # 拆分后的小组文件
+
+  # 报告和日志路径
+  reports_dir: "reports"
+  logs_dir: "logs"
+
+# 文件名配置
+files:
+  # 输入文件
+  normal_recruits: "普通志愿者招募表.xlsx"
+  internal_volunteers: "内部志愿者表.xlsx"
+  family_volunteers: "家属志愿者表.xlsx"
+  couple_volunteers: "情侣志愿者表.xlsx"
+  positions: "岗位表.xlsx"
+  direct_assignments: "直接委派名单.xlsx"
+
+  # 面试结果文件
+  unified_interview_scores: "统一面试打分表.xlsx"
+  normal_volunteers: "普通志愿者表.xlsx"
+  un_interviewed: "未面试人员名单.xlsx"
+
+  # 排表准备文件
+  metadata: "metadata.json"
+  formal_normal_volunteers: "正式普通志愿者表.xlsx"
+  backup_volunteers: "储备志愿者表.xlsx"
+  group_info: "小组信息表.xlsx"
+  binding_sets: "绑定集合表.xlsx"
+
+  # 输出文件
+  master_schedule: "总表.xlsx"
+  integrated_schedule: "大总表.xlsx"
+
+  # 报告文件
+  duplicate_report: "多表格查重报告.txt"
+  family_eligibility_report: "家属志愿者资格审查结果报告.txt"
+  couple_eligibility_report: "情侣志愿者资格核查结果报告.txt"
+  binding_summary_report: "绑定集合汇总报告.txt"
+
+# 字段名配置（支持模糊匹配，使用关键词）
+field_mappings:
+  # 通用字段关键词
+  student_id: "学号"
+  name: "姓名"
+  name_pinyin: "姓名拼音"
+  gender: "性别"
+  id_type: "证件类型"
+  id_number: "证件号"
+  birth_date: "出生日期"
+  college: "学院"
+  height: "身高"
+  email: "邮箱"
+  phone: "手机号"
+  qq: "QQ号"
+  wechat: "微信号"
+  political_status: "政治面貌"
+  marathon_count: "第几次做马拉松志愿者"
+  campus: "校区"
+  dorm_building: "宿舍楼栋"
+  dorm_building_minhang: "宿舍楼栋（闵行）"
+  dorm_building_non_minhang: "宿舍楼栋（非闵行）"
+  clothes_size: "衣服尺码"
+
+  # 特殊字段关键词
+  other_work: "其他工作"
+  leader_role: "是否愿意担任小组长"
+  family_of: "您是谁的家属"
+  hope_same_group: "是否希望与他/她同组"
+  couple1_student_id: "情侣一学号"
+  couple1_name: "情侣一姓名"
+  couple2_student_id: "情侣二学号"
+  couple2_name: "情侣二姓名"
+  normalized_score: "归一化成绩"
+  lightning_score: "闪电得分"
+  photography_score: "摄影得分"
+  position_name: "岗位名称"
+  position_description: "岗位简介"
+  required_count: "小组人数"
+  group_number: "小组号"
+  group_leader: "组长"
+
+  # 绑定集合相关字段关键词
+  binding_id: "绑定集合ID"
+  target_group: "目标小组"
+  member_student_id: "成员学号"
+  member_name: "成员姓名"
+
+# Excel数据类型配置
+string_fields:
+  # 强制保持为字符串的字段（避免前导0丢失）
+  - "学号"
+  - "证件号"
+  - "手机号"
+  - "QQ号"
+  - "微信号"
+  - "情侣一学号"
+  - "情侣二学号"
+  - "组长学号"
+  - "成员学号"
+  - "绑定集合ID"
+
+# 系统设置
+settings:
+  # 家属志愿者限制
+  max_family_per_internal: 2  # 每个内部志愿者最多可携带的家属人数
+
+  # 排表算法参数
+  allocation_priority:
+    leader: 1        # 组长优先级
+    binding: 2       # 绑定集合优先级
+    direct_assign: 3 # 直接委派优先级
+    special_role: 4  # 特殊身份优先级
+    normal: 5        # 普通志愿者优先级
+
+  # 绑定集合分配策略
+  binding_allocation:
+    prefer_large_groups: true  # 优先分配大绑定集合
+    prefer_large_groups_capacity: true  # 优先分配到容量大的小组
+
+# 颜色配置（用于Excel背景色）
+colors:
+  # 身份颜色（优先级从高到低）
+  leader: "FFFF00"        # 组长 - 黄色
+  lightning: "00FF00"     # 小闪电 - 绿色
+  photography: "E6E6FA"   # 摄影 - 淡紫色
+  couple: "FFB6C1"        # 情侣 - 粉色
+
+  # 属性颜色
+  internal: "FFA500"      # 内部志愿者 - 橙色
+  family: "87CEEB"        # 家属志愿者 - 天蓝色
+
+  # 团体志愿者颜色（从预设颜色中依次分配）
+  group_colors:
+      - "98FB98"  # 浅绿色
+      - "DDA0DD"  # 梅红色
+      - "F0E68C"  # 卡其色
+      - "ADD8E6"  # 浅蓝色
+      - "F5DEB3"  # 小麦色
+      - "FFDAB9"  # 桃色
+      - "E0FFFF"  # 浅青色
+      - "FAFAD2"  # 浅黄色
+      - "D3D3D3"  # 浅灰色
+      - "FFE4B5"  # 莫卡辛色
+      - "FFFACD"  # 柠檬绸色
+      - "F0FFF0"  # 蜜露色
+      - "B0E0E6"  # 粉蓝
+      - "FFEFD5"  # 番木色
+      - "C1FFC1"  # 淡绿
+      - "FFC0CB"  # 粉色
+
+
+  # 默认颜色
+  default: "FFFFFF"       # 普通志愿者 - 白色（无背景色）
+
+# 日志配置
+logging:
+  level: "INFO"  # 日志级别：DEBUG, INFO, WARNING, ERROR, CRITICAL
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+
+# Excel处理配置
+excel:
+  # 默认编码
+  encoding: "utf-8"
+
+  # 日期格式
+  date_format: "%Y-%m-%d"
+
+  # 性能优化
+  chunk_size: 10000  # 分块读取大文件时的块大小
+  use_openpyxl: true  # 使用openpyxl引擎（支持.xlsx格式）
+
+  # 输出格式
+  output_engine: "openpyxl"  # 输出Excel文件时使用的引擎

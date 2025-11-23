@@ -44,20 +44,31 @@ install:
 # 安装GUI依赖
 install-gui:
 	@echo "安装GUI依赖..."
-	@echo "安装系统包..."
+ifeq ($(OS),Windows_NT)
+	@echo "Windows系统: 只需安装PyQt5"
+	@echo "注意: Windows自带中文字体支持，无需额外安装"
+	pip install PyQt5>=5.15.0
+	@echo "GUI依赖安装完成"
+else
+	@echo "Linux系统: 安装系统包和PyQt5"
 	sudo apt install -y fonts-noto-cjk fonts-wqy-microhei fonts-wqy-zenhei
 	sudo apt install -y python3-pyqt5 libxcb-xinerama0 libxcb-cursor0
 	@echo "安装Python包..."
 	pip install PyQt5>=5.15.0
 	@echo "GUI依赖安装完成"
+endif
 
 # 启动GUI版本
 gui:
 	@echo "启动GUI版本..."
+ifeq ($(OS),Windows_NT)
+	python gui_main.py
+else
 	@export LANG=zh_CN.UTF-8 && \
 	export QT_XCB_GL_INTEGRATION=none && \
 	export LIBGL_ALWAYS_SOFTWARE=1 && \
 	python3 gui_main.py
+endif
 
 # 初始化项目环境
 setup: install

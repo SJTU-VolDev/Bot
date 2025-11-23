@@ -35,7 +35,7 @@
 ### 安装使用
 
 ```bash
-# 1. 安装依赖
+# 1. 安装基本依赖
 pip install -r requirements.txt
 
 # 2. 初始化项目
@@ -43,8 +43,18 @@ make setup
 
 # 3. 准备输入文件（见使用说明）
 
-# 4. 运行系统
+# 4. 运行系统（命令行）
 python main.py --all
+```
+
+### GUI 版本使用
+
+```bash
+# 1. 安装GUI依赖（仅首次使用）
+make install-gui
+
+# 2. 启动GUI界面
+make gui
 ```
 
 ## 工作流程概览

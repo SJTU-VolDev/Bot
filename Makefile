@@ -1,7 +1,7 @@
 # 志愿者排表系统 Makefile
 # 提供便捷的命令行快捷方式
 
-.PHONY: help install setup clean test run-all run-interview run-scheduling
+.PHONY: help install setup clean test run-all run-interview run-scheduling gui
 
 # 默认目标
 help:
@@ -9,12 +9,16 @@ help:
 	@echo ""
 	@echo "安装和设置:"
 	@echo "  install     - 安装项目依赖"
+	@echo "  install-gui - 安装GUI依赖"
 	@echo "  setup       - 初始化项目环境"
 	@echo "  clean       - 清理临时文件"
 	@echo ""
 	@echo "测试和验证:"
 	@echo "  test        - 运行单元测试"
 	@echo "  check       - 检查代码质量"
+	@echo ""
+	@echo "GUI界面:"
+	@echo "  gui         - 启动GUI版本"
 	@echo ""
 	@echo "数据处理流程:"
 	@echo "  run-all     - 运行完整流程"
@@ -36,6 +40,24 @@ help:
 install:
 	@echo "安装项目依赖..."
 	pip install -r requirements.txt
+
+# 安装GUI依赖
+install-gui:
+	@echo "安装GUI依赖..."
+	@echo "安装系统包..."
+	sudo apt install -y fonts-noto-cjk fonts-wqy-microhei fonts-wqy-zenhei
+	sudo apt install -y python3-pyqt5 libxcb-xinerama0 libxcb-cursor0
+	@echo "安装Python包..."
+	pip install PyQt5>=5.15.0
+	@echo "GUI依赖安装完成"
+
+# 启动GUI版本
+gui:
+	@echo "启动GUI版本..."
+	@export LANG=zh_CN.UTF-8 && \
+	export QT_XCB_GL_INTEGRATION=none && \
+	export LIBGL_ALWAYS_SOFTWARE=1 && \
+	python3 gui_main.py
 
 # 初始化项目环境
 setup: install

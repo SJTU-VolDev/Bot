@@ -33,3 +33,6 @@ chardet>=5.1.0
 
 # 系统兼容性
 typing-extensions>=4.4.0
+
+# GUI 界面库
+PyQt5>=5.15.0

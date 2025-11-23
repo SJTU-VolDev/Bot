@@ -34,6 +34,18 @@
 
 ### 安装使用
 
+Windows如何用venv配置虚拟环境？
+
+```bash
+# 创建虚拟环境
+python -m venv venv
+
+# 激活虚拟环境
+.\venv\Scripts\Activate.ps1
+
+# 之后再进行pip的依赖库安装
+```
+
 ```bash
 # 1. 安装基本依赖
 pip install -r requirements.txt
@@ -52,10 +64,7 @@ python main.py --all
 #### Windows 系统
 
 ```bash
-# 1. 安装GUI依赖（仅首次使用）
-pip install PyQt5>=5.15.0
-
-# 2. 启动GUI界面
+# 1. 启动GUI界面
 python gui_main.py
 ```
 

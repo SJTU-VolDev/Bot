@@ -34,8 +34,20 @@
 
 ### 安装使用
 
+Windows如何用venv配置虚拟环境？
+
 ```bash
-# 1. 安装依赖
+# 创建虚拟环境
+python -m venv venv
+
+# 激活虚拟环境
+.\venv\Scripts\Activate.ps1
+
+# 之后再进行pip的依赖库安装
+```
+
+```bash
+# 1. 安装基本依赖
 pip install -r requirements.txt
 
 # 2. 初始化项目
@@ -43,9 +55,32 @@ make setup
 
 # 3. 准备输入文件（见使用说明）
 
-# 4. 运行系统
+# 4. 运行系统（命令行）
 python main.py --all
 ```
+
+### GUI 版本使用
+
+#### Windows 系统
+
+```bash
+# 1. 启动GUI界面
+python gui_main.py
+```
+
+**注意**: Windows 自带中文字体支持，无需额外配置。
+
+#### Linux/WSL 系统
+
+```bash
+# 1. 安装GUI依赖（仅首次使用）
+make install-gui
+
+# 2. 启动GUI界面
+make gui
+```
+
+**注意**: Linux 系统需要安装中文字体和系统包。
 
 ## 工作流程概览
 

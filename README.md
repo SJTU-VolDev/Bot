@@ -18,12 +18,13 @@
 - 智能分离已面试和未面试人员
 - 成绩排序和数据清理
 
-### 📊 排表模块（开发中）
+### 📊 排表模块
 
 - 智能小组划分和组长分配
 - 复杂绑定关系处理（情侣、家属、团体）
 - 多种志愿者类型支持
 - 自动化排班算法
+- 绑定人员明细提取功能
 
 ## 快速开始
 
@@ -81,6 +82,42 @@ make gui
 ```
 
 **注意**: Linux 系统需要安装中文字体和系统包。
+
+### 附加功能
+
+#### 绑定人员提取
+
+在完成排表后，可以单独提取各小组中的绑定人员信息（情侣和家属）。
+
+**运行方式**：
+
+```bash
+# 使用Python直接运行
+python src/scheduling/binding_extractor.py
+
+# 或使用Makefile命令（推荐）
+make extract-bindings
+```
+
+**输入文件**：
+- `pipeline/02_scheduling_preparation/绑定集合表.xlsx` - 排表准备阶段生成的绑定集合信息
+- `output/总表.xlsx` - 最终排班总表
+
+**输出文件**：
+- `output/绑定人员明细表.xlsx` - 包含以下字段：
+  - 小组号：该绑定集合所在的小组
+  - 绑定类型：couple（情侣）或 family（家属）
+  - 人员一、人员二、人员三：绑定成员的姓名（不足三人则留空）
+
+**使用场景**：
+- 检查情侣志愿者是否被分配到同一小组
+- 查看家属志愿者的分布情况
+- 导出特定关系志愿者的汇总信息供管理使用
+
+**注意事项**：
+- 此功能需要在完成完整排表流程后运行（即执行 `make run-all` 或 `python main.py --all` 之后）
+- 只提取 couple 和 family 类型的绑定，不包括 group（团体）类型
+- 如果绑定成员未在总表中找到，会在日志中记录警告
 
 ## 工作流程概览
 
@@ -581,6 +618,7 @@ make gui
 ├── output/                           # 存放最终交付给用户的成果
 │   ├── 总表.xlsx
 │   ├── 大总表.xlsx
+│   ├── 绑定人员明细表.xlsx            # 包含家属和情侣的绑定关系详情，方便查看和管理
 │   └── 各小组名单/
 │       ├── 1.xlsx
 │       └── ...
@@ -613,7 +651,8 @@ make gui
 │       ├── group_allocator.log
 │       ├── binder.log
 │       ├── main_scheduler.log
-│       └── finalizer.log
+│       ├── finalizer.log
+│       └── binding_extractor.log
 │
 ├── src/                              # 存放所有Python源代码
 │   ├── __init__.py
@@ -644,7 +683,8 @@ make gui
 │       ├── group_allocator.py
 │       ├── binder.py
 │       ├── main_scheduler.py
-│       └── finalizer.py
+│       ├── finalizer.py
+│       └── binding_extractor.py      # 负责从排表结果中提取特定绑定关系
 │
 ├── config/                           # 存放配置文件
 │   ├── __init__.py

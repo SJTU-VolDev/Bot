@@ -24,6 +24,7 @@ help:
 	@echo "  run-all     - 运行完整流程"
 	@echo "  run-interview - 运行面试结果收集模块"
 	@echo "  run-scheduling - 运行排表模块"
+	@echo "  extract-bindings - 提取绑定人员明细"
 	@echo ""
 	@echo "通用工具:"
 	@echo "  merge       - 合并Excel文件"
@@ -115,6 +116,11 @@ run-interview:
 run-scheduling:
 	@echo "运行排表模块..."
 	@python main.py --scheduling
+
+# 提取绑定人员明细
+extract-bindings:
+	@echo "提取绑定人员明细..."
+	@python src/scheduling/binding_extractor.py
 
 # 通用工具命令
 merge:

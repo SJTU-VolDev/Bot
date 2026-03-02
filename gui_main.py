@@ -876,6 +876,104 @@ class FinalizerWidget(BaseModuleWidget):
         self.worker.start()
 
 
+class BindingExtractorWidget(BaseModuleWidget):
+    """绑定人员提取模块"""
+    
+    def __init__(self, parent=None):
+        super().__init__("绑定人员提取", parent)
+        
+        # 说明文字
+        desc = QLabel("从总表中提取各小组的绑定人员信息（情侣和家属）")
+        desc.setWordWrap(True)
+        self.file_layout.addWidget(desc)
+        
+        # 提示信息
+        tip = QLabel(
+            "【提示】此功能需要先完成完整的排表流程\n"
+            "将提取couple和family类型的绑定人员，输出到绑定人员明细表.xlsx"
+        )
+        tip.setStyleSheet("color: #2196F3; padding: 10px; background-color: #E3F2FD; border-radius: 5px;")
+        tip.setWordWrap(True)
+        self.file_layout.addWidget(tip)
+    
+    def check_files(self):
+        """检查文件"""
+        import os
+        self.clear_log()
+        self.log("[检查] 检查必要的输入文件...")
+        
+        files_to_check = [
+            ("绑定集合表", get_file_path('binding_sets')),
+            ("总表", get_file_path('master_schedule')),
+        ]
+        
+        all_exist = True
+        for name, path in files_to_check:
+            if os.path.exists(path):
+                self.log(f"✓ {name}: 存在")
+            else:
+                self.log(f"✗ {name}: 不存在 - {path}")
+                all_exist = False
+        
+        if all_exist:
+            self.log("\n[OK] 所有必要文件都已准备就绪！")
+        else:
+            self.log("\n[警告] 请先完成排表流程（步骤1-10）")
+    
+    def execute(self):
+        """执行绑定人员提取"""
+        from src.scheduling.binding_extractor import BindingExtractor
+        
+        self.clear_log()
+        self.setup_logging()
+        self.log("开始提取绑定人员信息...")
+        self.show_progress(True)
+        self.run_btn.setEnabled(False)
+        
+        def run_extractor():
+            try:
+                extractor = BindingExtractor()
+                results = extractor.extract_binding_members()
+                
+                # 检查是否有错误
+                if results.get('errors'):
+                    self.log("\n执行过程中发生错误：")
+                    for error in results['errors']:
+                        self.log(f"  ✗ {error}")
+                    return False
+                
+                # 显示统计信息
+                if results.get('statistics'):
+                    stats = results['statistics']
+                    self.log(f"\n提取完成！统计信息：")
+                    self.log(f"  - 总绑定集合数: {stats.get('total_bindings', 0)}")
+                    self.log(f"  - 涉及小组数: {stats.get('groups_with_bindings', 0)}")
+                    
+                    if stats.get('by_type'):
+                        self.log(f"\n  按绑定类型统计：")
+                        for binding_type, count in stats['by_type'].items():
+                            self.log(f"    - {binding_type}: {count}")
+                    
+                    if stats.get('by_member_count'):
+                        self.log(f"\n  按成员数量统计：")
+                        for member_count, count in stats['by_member_count'].items():
+                            self.log(f"    - {member_count}人: {count}个绑定集合")
+                
+                if results.get('output_file'):
+                    self.log(f"\n输出文件: {results['output_file']}")
+                
+                return True
+            except Exception as e:
+                self.log(f"\n错误: {str(e)}")
+                import traceback
+                self.log(traceback.format_exc())
+                return False
+        
+        self.worker = WorkerThread(run_extractor)
+        self.worker.finished.connect(self.on_task_finished)
+        self.worker.start()
+
+
 class MainWindow(QMainWindow):
     """主窗口"""
     
@@ -958,12 +1056,14 @@ class MainWindow(QMainWindow):
             "智能小组划分和组长分配\n"
             "复杂绑定关系处理\n"
             "自动化排班算法\n"
-            "一键生成最终名单\n\n"
+            "一键生成最终名单\n"
+            "绑定人员明细提取\n\n"
             "【使用步骤】\n"
             "1 准备输入文件（Excel 格式）\n"
             "2 按照标签页顺序依次执行\n"
             "3 查看实时日志了解进度\n"
-            "4 获取输出结果文件\n\n"
+            "4 获取输出结果文件\n"
+            "5 可选：提取绑定人员明细\n\n"
             "【快速开始】\n"
             "点击左侧标签页开始使用，或查看菜单栏的帮助文档。"
         )
@@ -1036,6 +1136,9 @@ class MainWindow(QMainWindow):
         
         # 10. 总表拆分和表格整合
         self.tabs.addTab(FinalizerWidget(), "[10] 总表拆分整合")
+        
+        # 11. 绑定人员提取
+        self.tabs.addTab(BindingExtractorWidget(), "[11] 绑定人员提取")
     
     def create_menu_bar(self):
         """创建菜单栏"""
@@ -1071,7 +1174,7 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self, 
             "批量执行确认",
-            "是否要按顺序执行所有 10 个步骤？\n\n"
+            "是否要按顺序执行所有 10 个主要步骤？\n\n"
             "这将自动运行：\n"
             "1 汇总面试打分表\n"
             "2 分离已/未面试人员\n"
@@ -1083,6 +1186,8 @@ class MainWindow(QMainWindow):
             "8 绑定集合生成\n"
             "9 排表主程序\n"
             "10 总表拆分整合\n\n"
+            "注：步骤11（绑定人员提取）为可选附加功能，\n"
+            "完成主流程后可单独运行。\n\n"
             "请确保所有输入文件已准备好！",
             QMessageBox.Yes | QMessageBox.No
         )
@@ -1118,6 +1223,7 @@ class MainWindow(QMainWindow):
 8 绑定集合生成 - 生成各种绑定关系
 9 排表主程序 - 执行核心排班算法
 10 总表拆分整合 - 生成最终的小组名单
+11 绑定人员提取 - 从总表中提取绑定人员信息（可选）
 
 【注意事项】
 • 所有输入文件应为 Excel 格式（.xlsx 或 .xls）

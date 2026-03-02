@@ -30,6 +30,14 @@ from src.scheduling.data_models import SchedulingMetadata
 class PreChecker:
     """基本信息核查和收集器"""
 
+    # 优先级定义：数字越大优先级越高
+    PRIORITY_MAP = {
+        'group_volunteers': 4,           # 团体志愿者：最高优先级
+        'family_volunteers': 3,          # 家属志愿者
+        'internal_volunteers': 2,        # 内部志愿者
+        'normal_volunteers': 1           # 普通志愿者：最低优先级
+    }
+
     def __init__(self):
         self.logger = get_logger(__file__)
         self.handler = ExcelHandler()
@@ -46,14 +54,25 @@ class PreChecker:
         # 确保目录存在
         os.makedirs(self.scheduling_prep_dir, exist_ok=True)
         os.makedirs(self.reports_dir, exist_ok=True)
+        
+        # 存储去重相关信息
+        self.deduplication_log = []  # 记录所有删除操作
 
-    def run_pre_check(self) -> Dict[str, Any]:
-        """执行完整的预检查流程"""
+    def run_pre_check(self, remove_duplicates: bool = False) -> Dict[str, Any]:
+        """执行完整的预检查流程
+        
+        Args:
+            remove_duplicates: 是否执行去重操作，默认为False（仅查重，不去重）
+        
+        Returns:
+            包含查重结果、元数据和去重信息的字典
+        """
         self.logger.info("开始执行基本信息核查和收集")
 
         results = {
             'duplicate_check': None,
             'metadata': None,
+            'deduplication': None,
             'errors': [],
             'warnings': []
         }
@@ -66,11 +85,16 @@ class PreChecker:
             duplicate_report = self._check_duplicates(input_files)
             results['duplicate_check'] = duplicate_report
 
-            # 步骤3：收集元数据
+            # 步骤3：如果需要，执行去重操作
+            if remove_duplicates:
+                dedup_report = self._remove_duplicates(input_files, duplicate_report)
+                results['deduplication'] = dedup_report
+
+            # 步骤4：收集元数据
             metadata = self._collect_metadata(input_files)
             results['metadata'] = metadata
 
-            # 步骤4：保存元数据文件
+            # 步骤5：保存元数据文件
             metadata_file = self._save_metadata(metadata)
 
             self.logger.info("预检查完成")
@@ -297,6 +321,381 @@ class PreChecker:
         except Exception as e:
             self.logger.error(f"保存重复记录核查报告失败: {str(e)}")
 
+    def _remove_duplicates(self, files: Dict[str, pd.DataFrame], duplicate_report: Dict[str, Any]) -> Dict[str, Any]:
+        """执行去重操作
+        
+        去重规则：
+        1. 只关注重复学号，不关注重复姓名
+        2. 优先级：团体 > 家属 > 内部 > 普通
+        3. 同表格中重复学号：保留最后一条，删除前面的
+        4. 不同表格中重复学号：保留最高优先级表格的记录，删除其他
+        
+        Returns:
+            包含去重操作结果的字典
+        """
+        self.logger.info("开始执行去重操作")
+        self.deduplication_log = []
+        
+        dedup_report = {
+            'total_deleted': 0,
+            'deletion_details': [],
+            'files_modified': set(),
+            'errors': []
+        }
+        
+        try:
+            student_id_duplicates = duplicate_report.get('student_id_duplicates', {})
+            
+            if not student_id_duplicates:
+                self.logger.info("未发现重复学号，无需去重")
+                dedup_report['total_deleted'] = 0
+                return dedup_report
+            
+            # 第一步：处理同表格中的重复学号
+            same_file_duplicates = self._handle_same_file_duplicates(files)
+            
+            # 第二步：处理不同表格中的重复学号
+            cross_file_duplicates = self._handle_cross_file_duplicates(files, student_id_duplicates)
+            
+            # 统计删除信息
+            dedup_report['total_deleted'] = same_file_duplicates['count'] + cross_file_duplicates['count']
+            dedup_report['deletion_details'] = self.deduplication_log
+            dedup_report['files_modified'] = list(set(same_file_duplicates['files'] + cross_file_duplicates['files']))
+            
+            # 生成并保存去重报告
+            self._save_deduplication_report(dedup_report)
+            
+            self.logger.info(f"去重完成，共删除 {dedup_report['total_deleted']} 条重复记录")
+            
+        except Exception as e:
+            self.logger.error(f"去重操作失败: {str(e)}")
+            dedup_report['errors'].append(str(e))
+        
+        return dedup_report
+
+    def _handle_same_file_duplicates(self, files: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
+        """处理同一个表格中的重复学号
+        
+        规则：同表格中同学号，保留最后一条，删除前面的
+        
+        Returns:
+            包含删除计数和修改文件列表的字典
+        """
+        result = {'count': 0, 'files': []}
+        
+        self.logger.info("处理同表格中的重复学号")
+        
+        # 需要处理的志愿者表格
+        volunteer_files = ['normal_volunteers', 'internal_volunteers', 'family_volunteers']
+        
+        for file_key in volunteer_files:
+            if file_key not in files:
+                continue
+            
+            df = files[file_key]
+            rows_to_delete = self._find_duplicate_rows_in_dataframe(df, file_key)
+            
+            if rows_to_delete:
+                # 删除重复行
+                deleted_count = self._delete_rows_from_dataframe(df, rows_to_delete, file_key)
+                result['count'] += deleted_count
+                result['files'].append(file_key)
+                
+                # 保存修改到原文件
+                self._save_modified_file(file_key, df)
+        
+        # 处理团体文件中的重复
+        for group_name, df in files.get('group_volunteers', {}).items():
+            group_key = f"团体-{group_name}"
+            rows_to_delete = self._find_duplicate_rows_in_dataframe(df, group_key)
+            
+            if rows_to_delete:
+                deleted_count = self._delete_rows_from_dataframe(df, rows_to_delete, group_key)
+                result['count'] += deleted_count
+                result['files'].append(group_key)
+                
+                # 保存修改到原文件
+                self._save_modified_group_file(group_name, df)
+        
+        return result
+
+    def _handle_cross_file_duplicates(self, files: Dict[str, pd.DataFrame], 
+                                     student_id_duplicates: Dict) -> Dict[str, Any]:
+        """处理不同表格中的重复学号
+        
+        规则：按优先级保留最高优先级的记录，删除其他
+        
+        Returns:
+            包含删除计数和修改文件列表的字典
+        """
+        result = {'count': 0, 'files': []}
+        
+        self.logger.info("处理不同表格中的重复学号")
+        
+        # 遍历每个重复的学号
+        for student_id, records in student_id_duplicates.items():
+            # 过滤出确实在不同文件中的记录
+            unique_files = {}
+            for file_name, row_idx, name in records:
+                # 获取实际的文件类型
+                file_type = self._get_file_type_from_name(file_name)
+                if file_type not in unique_files:
+                    unique_files[file_type] = []
+                unique_files[file_type].append((file_name, row_idx, name))
+            
+            # 如果学号只在一个file_type中，则不处理（这由同表格去重处理）
+            if len(unique_files) < 2:
+                continue
+            
+            # 按优先级排序，保留最高优先级，删除其他
+            self.logger.debug(f"学号 {student_id} 在多个表格中出现: {list(unique_files.keys())}")
+            
+            # 找到最高优先级的文件类型
+            max_priority = -1
+            keep_file_type = None
+            
+            for file_type in unique_files.keys():
+                priority = self.PRIORITY_MAP.get(file_type, 0)
+                if priority > max_priority:
+                    max_priority = priority
+                    keep_file_type = file_type
+            
+            self.logger.debug(f"  学号 {student_id}: 保留 {keep_file_type} 中的记录，删除其他")
+            
+            # 删除非最高优先级的记录
+            for file_type, type_records in unique_files.items():
+                if file_type == keep_file_type:
+                    continue
+                
+                for file_name, row_idx, name in type_records:
+                    # 从对应的DataFrame中删除该行
+                    success = self._delete_duplicate_record(files, file_type, file_name, row_idx)
+                    if success:
+                        result['count'] += 1
+                        if file_name not in result['files']:
+                            result['files'].append(file_name)
+                        
+                        log_msg = (f"删除 {file_name} 中学号为 {student_id}、"
+                                  f"行号为 {row_idx+1}、姓名为 {name} 的记录")
+                        self.deduplication_log.append(log_msg)
+                        self.logger.debug(log_msg)
+        
+        return result
+
+    def _get_file_type_from_name(self, file_name: str) -> str:
+        """从文件名获取文件类型标识符"""
+        if file_name == 'normal_volunteers':
+            return 'normal_volunteers'
+        elif file_name == 'internal_volunteers':
+            return 'internal_volunteers'
+        elif file_name == 'family_volunteers':
+            return 'family_volunteers'
+        elif file_name.startswith('团体-'):
+            return 'group_volunteers'
+        else:
+            return 'unknown'
+
+    def _find_duplicate_rows_in_dataframe(self, df: pd.DataFrame, file_name: str) -> List[int]:
+        """查找DataFrame中的重复学号行
+        
+        规则：对于同一个学号，保留最后一行，返回要删除的行索引列表
+        
+        Returns:
+            要删除的行索引列表
+        """
+        rows_to_delete = []
+        
+        try:
+            # 查找学号列
+            field_mappings = CONFIG.get('field_mappings', {})
+            student_id_keyword = field_mappings.get('student_id', '学号')
+            name_keyword = field_mappings.get('name', '姓名')
+            
+            column_mapping = self.handler.find_columns_by_keywords(df, {
+                'student_id': student_id_keyword,
+                'name': name_keyword
+            })
+            
+            student_id_col = None
+            name_col = None
+            
+            for actual_col, field_type in column_mapping.items():
+                if field_type == 'student_id':
+                    student_id_col = actual_col
+                elif field_type == 'name':
+                    name_col = actual_col
+            
+            if not student_id_col:
+                self.logger.warning(f"文件 {file_name} 中未找到学号列")
+                return rows_to_delete
+            
+            # 找到重复的学号
+            student_id_positions = defaultdict(list)  # 学号 -> [行索引列表]
+            
+            for idx, row in df.iterrows():
+                student_id = str(row[student_id_col]).strip() if pd.notna(row[student_id_col]) else ''
+                if student_id:
+                    student_id_positions[student_id].append(idx)
+            
+            # 对于每个有多个记录的学号，标记除最后一条外的所有行为删除
+            for student_id, indices in student_id_positions.items():
+                if len(indices) > 1:
+                    # 保留最后一条（索引最大的），删除前面的
+                    rows_to_delete.extend(indices[:-1])
+                    
+                    name = str(df.loc[indices[-1], name_col]) if name_col and pd.notna(df.loc[indices[-1], name_col]) else '未知'
+                    deleted_count = len(indices) - 1
+                    
+                    log_msg = (f"在 {file_name} 中发现学号 {student_id} 的 {len(indices)} 条记录，"
+                              f"保留行号 {indices[-1]+1}、姓名 {name}，删除 {deleted_count} 条前面的记录")
+                    self.deduplication_log.append(log_msg)
+                    self.logger.debug(log_msg)
+        
+        except Exception as e:
+            self.logger.error(f"查找 {file_name} 中的重复行时出错: {str(e)}")
+        
+        return sorted(rows_to_delete, reverse=True)  # 从后往前删除，避免索引变化
+
+    def _delete_rows_from_dataframe(self, df: pd.DataFrame, row_indices: List[int], file_name: str) -> int:
+        """从DataFrame中删除指定行
+        
+        Returns:
+            实际删除的行数
+        """
+        deleted_count = 0
+        
+        try:
+            # 获取学号和姓名列用于日志
+            field_mappings = CONFIG.get('field_mappings', {})
+            student_id_keyword = field_mappings.get('student_id', '学号')
+            name_keyword = field_mappings.get('name', '姓名')
+            
+            column_mapping = self.handler.find_columns_by_keywords(df, {
+                'student_id': student_id_keyword,
+                'name': name_keyword
+            })
+            
+            student_id_col = None
+            name_col = None
+            
+            for actual_col, field_type in column_mapping.items():
+                if field_type == 'student_id':
+                    student_id_col = actual_col
+                elif field_type == 'name':
+                    name_col = actual_col
+            
+            for idx in row_indices:
+                student_id = str(df.loc[idx, student_id_col]).strip() if student_id_col and pd.notna(df.loc[idx, student_id_col]) else '未知'
+                name = str(df.loc[idx, name_col]).strip() if name_col and pd.notna(df.loc[idx, name_col]) else '未知'
+                
+                df.drop(idx, inplace=True)
+                deleted_count += 1
+        
+        except Exception as e:
+            self.logger.error(f"删除 {file_name} 中的行时出错: {str(e)}")
+        
+        return deleted_count
+
+    def _delete_duplicate_record(self, files: Dict[str, pd.DataFrame], file_type: str, 
+                                file_name: str, row_idx: int) -> bool:
+        """删除特定表格中的重复记录"""
+        try:
+            if file_type == 'group_volunteers':
+                # 从团体文件中删除
+                group_name = file_name.replace('团体-', '')
+                if group_name in files.get('group_volunteers', {}):
+                    df = files['group_volunteers'][group_name]
+                    df.drop(row_idx, inplace=True)
+                    return True
+            else:
+                # 从标准表格中删除
+                if file_type in files:
+                    df = files[file_type]
+                    df.drop(row_idx, inplace=True)
+                    return True
+        
+        except Exception as e:
+            self.logger.error(f"删除记录失败 {file_name} 行 {row_idx}: {str(e)}")
+        
+        return False
+
+    def _save_modified_file(self, file_key: str, df: pd.DataFrame):
+        """保存修改后的文件到原位置"""
+        try:
+            # 根据file_key确定原始文件位置
+            if file_key == 'normal_volunteers':
+                file_name = CONFIG.get('files.normal_volunteers')
+                file_path = os.path.join(self.interview_results_dir, file_name)
+            else:
+                file_configs = {
+                    'internal_volunteers': CONFIG.get('files.internal_volunteers'),
+                    'family_volunteers': CONFIG.get('files.family_volunteers')
+                }
+                file_name = file_configs.get(file_key)
+                file_path = os.path.join(self.input_dir, file_name)
+            
+            if file_name:
+                # 重置DataFrame索引
+                df.reset_index(drop=True, inplace=True)
+                
+                # 写回Excel文件
+                self.handler.write_excel(file_path, df)
+                self.logger.info(f"已保存修改到文件: {file_path}")
+        
+        except Exception as e:
+            self.logger.error(f"保存修改的文件失败 {file_key}: {str(e)}")
+
+    def _save_modified_group_file(self, group_name: str, df: pd.DataFrame):
+        """保存修改后的团体志愿者文件"""
+        try:
+            file_path = os.path.join(self.groups_dir, f"{group_name}.xlsx")
+            
+            # 重置DataFrame索引
+            df.reset_index(drop=True, inplace=True)
+            
+            # 写回Excel文件
+            self.handler.write_excel(file_path, df)
+            self.logger.info(f"已保存修改到团体文件: {file_path}")
+        
+        except Exception as e:
+            self.logger.error(f"保存修改的团体文件失败 {group_name}: {str(e)}")
+
+    def _save_deduplication_report(self, dedup_report: Dict[str, Any]):
+        """保存去重报告"""
+        report_file = os.path.join(self.reports_dir, '多表格去重报告.txt')
+        
+        try:
+            with open(report_file, 'w', encoding='utf-8') as f:
+                f.write("多表格去重报告\n")
+                f.write("=" * 60 + "\n\n")
+                f.write(f"去重时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                
+                f.write("去重摘要:\n")
+                f.write(f"  总删除记录数: {dedup_report['total_deleted']}\n")
+                f.write(f"  修改文件数: {len(dedup_report['files_modified'])}\n")
+                if dedup_report['files_modified']:
+                    f.write(f"  修改的文件: {', '.join(dedup_report['files_modified'])}\n")
+                f.write("\n")
+                
+                if dedup_report['deletion_details']:
+                    f.write("删除详情:\n")
+                    f.write("-" * 40 + "\n")
+                    for i, detail in enumerate(dedup_report['deletion_details'], 1):
+                        f.write(f"{i}. {detail}\n")
+                else:
+                    f.write("无删除操作\n")
+                
+                if dedup_report['errors']:
+                    f.write("\n错误信息:\n")
+                    f.write("-" * 40 + "\n")
+                    for error in dedup_report['errors']:
+                        f.write(f"  {error}\n")
+            
+            self.logger.info(f"去重报告已保存到: {report_file}")
+        
+        except Exception as e:
+            self.logger.error(f"保存去重报告失败: {str(e)}")
+
     def _collect_metadata(self, files: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         """收集元数据信息"""
         self.logger.info("开始收集元数据信息")
@@ -448,6 +847,8 @@ def main():
     parser = argparse.ArgumentParser(description='基本信息核查和收集程序')
     parser.add_argument('--input-dir', help='输入目录路径')
     parser.add_argument('--output-dir', help='输出目录路径')
+    parser.add_argument('--remove-duplicates', action='store_true', 
+                       help='执行去重操作。如果不指定，只生成查重报告不删除文件')
 
     args = parser.parse_args()
 
@@ -463,8 +864,8 @@ def main():
         if args.output_dir:
             checker.scheduling_prep_dir = args.output_dir
 
-        # 执行预检查
-        results = checker.run_pre_check()
+        # 执行预检查（带去重选项）
+        results = checker.run_pre_check(remove_duplicates=args.remove_duplicates)
 
         # 输出结果摘要
         if results['duplicate_check']:
@@ -472,6 +873,14 @@ def main():
             print(f"\n[查重摘要]:")
             print(f"  重复学号: {summary['total_student_id_duplicates']} 个")
             print(f"  重复姓名: {summary['total_name_duplicates']} 个")
+
+        if args.remove_duplicates and results.get('deduplication'):
+            dedup = results['deduplication']
+            print(f"\n[去重摘要]:")
+            print(f"  删除记录数: {dedup['total_deleted']} 条")
+            print(f"  修改文件: {len(dedup['files_modified'])} 个")
+            if dedup['files_modified']:
+                print(f"  文件列表: {', '.join(dedup['files_modified'])}")
 
         if results['metadata']:
             stats = results['metadata']['statistics']
@@ -485,6 +894,11 @@ def main():
             print(f"  总需求人数: {stats.get('total_required_volunteers', 0)} 人")
 
         print(f"\n[预检查完成！]")
+        if args.remove_duplicates:
+            print(f"[模式]: 查重 + 去重")
+        else:
+            print(f"[模式]: 仅查重（未删除文件）")
+            print(f"[提示]: 如需执行去重操作，请加上 --remove-duplicates 参数")
         print(f"[详细报告请查看]: {checker.reports_dir}")
         print(f"[元数据文件]: {results.get('metadata_file', '未生成')}")
 

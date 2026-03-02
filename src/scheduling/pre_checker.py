@@ -58,11 +58,11 @@ class PreChecker:
         # 存储去重相关信息
         self.deduplication_log = []  # 记录所有删除操作
 
-    def run_pre_check(self, remove_duplicates: bool = False) -> Dict[str, Any]:
+    def run_pre_check(self, remove_duplicates: bool = True) -> Dict[str, Any]:
         """执行完整的预检查流程
         
         Args:
-            remove_duplicates: 是否执行去重操作，默认为False（仅查重，不去重）
+            remove_duplicates: 是否执行去重操作，默认为True（查重+去重）
         
         Returns:
             包含查重结果、元数据和去重信息的字典
@@ -351,16 +351,24 @@ class PreChecker:
                 dedup_report['total_deleted'] = 0
                 return dedup_report
             
+            # 跟踪需要保存的文件
+            modified_files = set()
+            
             # 第一步：处理同表格中的重复学号
             same_file_duplicates = self._handle_same_file_duplicates(files)
+            modified_files.update(same_file_duplicates['files'])
             
             # 第二步：处理不同表格中的重复学号
             cross_file_duplicates = self._handle_cross_file_duplicates(files, student_id_duplicates)
+            modified_files.update(cross_file_duplicates['files'])
+            
+            # 第三步：保存所有修改过的文件
+            self._save_all_modified_files(files, modified_files)
             
             # 统计删除信息
             dedup_report['total_deleted'] = same_file_duplicates['count'] + cross_file_duplicates['count']
             dedup_report['deletion_details'] = self.deduplication_log
-            dedup_report['files_modified'] = list(set(same_file_duplicates['files'] + cross_file_duplicates['files']))
+            dedup_report['files_modified'] = list(modified_files)
             
             # 生成并保存去重报告
             self._save_deduplication_report(dedup_report)
@@ -400,9 +408,6 @@ class PreChecker:
                 deleted_count = self._delete_rows_from_dataframe(df, rows_to_delete, file_key)
                 result['count'] += deleted_count
                 result['files'].append(file_key)
-                
-                # 保存修改到原文件
-                self._save_modified_file(file_key, df)
         
         # 处理团体文件中的重复
         for group_name, df in files.get('group_volunteers', {}).items():
@@ -413,9 +418,6 @@ class PreChecker:
                 deleted_count = self._delete_rows_from_dataframe(df, rows_to_delete, group_key)
                 result['count'] += deleted_count
                 result['files'].append(group_key)
-                
-                # 保存修改到原文件
-                self._save_modified_group_file(group_name, df)
         
         return result
 
@@ -619,6 +621,26 @@ class PreChecker:
         
         return False
 
+    def _save_all_modified_files(self, files: Dict[str, pd.DataFrame], modified_files: set):
+        """统一保存所有修改过的文件"""
+        self.logger.info(f"开始保存 {len(modified_files)} 个修改过的文件")
+        
+        for file_key in modified_files:
+            try:
+                if file_key.startswith('团体-'):
+                    # 处理团体文件
+                    group_name = file_key.replace('团体-', '')
+                    if group_name in files.get('group_volunteers', {}):
+                        df = files['group_volunteers'][group_name]
+                        self._save_modified_group_file(group_name, df)
+                else:
+                    # 处理标准志愿者文件
+                    if file_key in files:
+                        df = files[file_key]
+                        self._save_modified_file(file_key, df)
+            except Exception as e:
+                self.logger.error(f"保存文件 {file_key} 时出错: {str(e)}")
+    
     def _save_modified_file(self, file_key: str, df: pd.DataFrame):
         """保存修改后的文件到原位置"""
         try:
@@ -638,8 +660,8 @@ class PreChecker:
                 # 重置DataFrame索引
                 df.reset_index(drop=True, inplace=True)
                 
-                # 写回Excel文件
-                self.handler.write_excel(file_path, df)
+                # 写回Excel文件（注意参数顺序：df在前，file_path在后）
+                self.handler.write_excel(df, file_path)
                 self.logger.info(f"已保存修改到文件: {file_path}")
         
         except Exception as e:
@@ -653,8 +675,8 @@ class PreChecker:
             # 重置DataFrame索引
             df.reset_index(drop=True, inplace=True)
             
-            # 写回Excel文件
-            self.handler.write_excel(file_path, df)
+            # 写回Excel文件（注意参数顺序：df在前，file_path在后）
+            self.handler.write_excel(df, file_path)
             self.logger.info(f"已保存修改到团体文件: {file_path}")
         
         except Exception as e:
@@ -847,8 +869,8 @@ def main():
     parser = argparse.ArgumentParser(description='基本信息核查和收集程序')
     parser.add_argument('--input-dir', help='输入目录路径')
     parser.add_argument('--output-dir', help='输出目录路径')
-    parser.add_argument('--remove-duplicates', action='store_true', 
-                       help='执行去重操作。如果不指定，只生成查重报告不删除文件')
+    parser.add_argument('--check-only', action='store_true', 
+                       help='仅执行查重，不删除重复记录。默认会同时查重和去重')
 
     args = parser.parse_args()
 
@@ -865,7 +887,8 @@ def main():
             checker.scheduling_prep_dir = args.output_dir
 
         # 执行预检查（带去重选项）
-        results = checker.run_pre_check(remove_duplicates=args.remove_duplicates)
+        # 注意：默认执行去重，如果指定了--check-only则仅查重
+        results = checker.run_pre_check(remove_duplicates=not args.check_only)
 
         # 输出结果摘要
         if results['duplicate_check']:
@@ -874,7 +897,7 @@ def main():
             print(f"  重复学号: {summary['total_student_id_duplicates']} 个")
             print(f"  重复姓名: {summary['total_name_duplicates']} 个")
 
-        if args.remove_duplicates and results.get('deduplication'):
+        if results.get('deduplication'):
             dedup = results['deduplication']
             print(f"\n[去重摘要]:")
             print(f"  删除记录数: {dedup['total_deleted']} 条")
@@ -894,11 +917,11 @@ def main():
             print(f"  总需求人数: {stats.get('total_required_volunteers', 0)} 人")
 
         print(f"\n[预检查完成！]")
-        if args.remove_duplicates:
-            print(f"[模式]: 查重 + 去重")
-        else:
+        if args.check_only:
             print(f"[模式]: 仅查重（未删除文件）")
-            print(f"[提示]: 如需执行去重操作，请加上 --remove-duplicates 参数")
+            print(f"[提示]: 默认模式会自动去重，如需去重请去掉 --check-only 参数")
+        else:
+            print(f"[模式]: 查重 + 去重")
         print(f"[详细报告请查看]: {checker.reports_dir}")
         print(f"[元数据文件]: {results.get('metadata_file', '未生成')}")
 

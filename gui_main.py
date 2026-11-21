@@ -15,17 +15,496 @@ os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QTabWidget, QPushButton, QLabel, QTextEdit, QProgressBar,
-    QFileDialog, QMessageBox, QGroupBox, QLineEdit, QSplitter
+    QPushButton, QLabel, QTextEdit, QProgressBar, QFrame, QStackedWidget,
+    QScrollArea, QButtonGroup, QFileDialog, QMessageBox, QLineEdit
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFont, QTextCursor, QIcon, QPixmap
+from PyQt5.QtGui import (
+    QFont, QFontDatabase, QIcon, QPixmap, QPainter, QPainterPath, QColor, QPalette
+)
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent
 sys.path.append(str(project_root))
 
 from config.loader import CONFIG, get_file_path
+
+
+# ============================================================
+# 主题 / 样式
+# ============================================================
+
+LOGO_PATH = project_root / "src" / "image" / "volunteer.jpg"
+
+ACCENT = "#2F6FD6"
+ACCENT_HOVER = "#2862C2"
+ACCENT_PRESSED = "#2253A6"
+ACCENT_SOFT = "#EAF1FD"
+BG = "#F4F6FA"
+SURFACE = "#FFFFFF"
+BORDER = "#E3E8EF"
+BORDER_STRONG = "#D3DAE5"
+TEXT = "#1F2937"
+TEXT_MUTED = "#6B7280"
+TEXT_FAINT = "#9AA3B2"
+
+UI_FONT_CANDIDATES = [
+    "PingFang SC", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei",
+]
+MONO_FONT_CANDIDATES = [
+    "Menlo", "Cascadia Mono", "Consolas", "JetBrains Mono",
+    "DejaVu Sans Mono", "Monaco",
+]
+
+
+def _pick_font(candidates, fallback: str) -> str:
+    """从候选字体中挑选系统中实际存在的第一个"""
+    families = set(QFontDatabase().families())
+    for name in candidates:
+        if name in families:
+            return name
+    return fallback
+
+
+def build_stylesheet(ui_font: str, mono_font: str) -> str:
+    """生成全局样式表"""
+    return f"""
+    QWidget {{
+        font-family: "{ui_font}";
+        font-size: 14px;
+        color: {TEXT};
+    }}
+    QMainWindow, QStackedWidget#pages {{
+        background: {BG};
+    }}
+
+    /* ---------- 侧边栏 ---------- */
+    QFrame#sidebar {{
+        background: {SURFACE};
+        border: none;
+        border-right: 1px solid {BORDER};
+    }}
+    QScrollArea#navScroll, QScrollArea#pageScroll {{
+        background: transparent;
+        border: none;
+    }}
+    QScrollArea#navScroll > QWidget#qt_scrollarea_viewport,
+    QScrollArea#pageScroll > QWidget#qt_scrollarea_viewport,
+    QWidget#navInner, QWidget#welcomePage {{
+        background: transparent;
+    }}
+    QLabel#brandTitle {{
+        font-size: 16px;
+        font-weight: 700;
+        color: #111827;
+    }}
+    QLabel#brandSub {{
+        font-size: 11px;
+        color: {TEXT_FAINT};
+    }}
+    QLabel#navSection {{
+        font-size: 12px;
+        font-weight: 600;
+        color: {TEXT_FAINT};
+        padding: 14px 10px 4px 10px;
+    }}
+    QPushButton#navButton {{
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        padding: 0;
+    }}
+    QPushButton#navButton:hover {{
+        background: #F2F5FA;
+    }}
+    QPushButton#navButton:checked {{
+        background: {ACCENT_SOFT};
+    }}
+    QLabel#navBadge {{
+        background: #EEF1F5;
+        color: {TEXT_MUTED};
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+    }}
+    QLabel#navBadge[active="true"] {{
+        background: {ACCENT};
+        color: white;
+    }}
+    QLabel#navText {{
+        color: #374151;
+    }}
+    QLabel#navText[active="true"] {{
+        color: {ACCENT};
+        font-weight: 600;
+    }}
+
+    /* ---------- 页面头部 ---------- */
+    QLabel#pageEyebrow {{
+        font-size: 12px;
+        font-weight: 700;
+        color: {ACCENT};
+    }}
+    QLabel#pageTitle {{
+        font-size: 24px;
+        font-weight: 700;
+        color: #111827;
+    }}
+    QLabel#pageSubtitle {{
+        font-size: 14px;
+        color: {TEXT_MUTED};
+    }}
+    QLabel#statusPill {{
+        border-radius: 11px;
+        padding: 3px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        background: #EEF1F5;
+        color: {TEXT_MUTED};
+    }}
+    QLabel#statusPill[state="running"] {{ background: #FEF3C7; color: #B45309; }}
+    QLabel#statusPill[state="success"] {{ background: #DCFCE7; color: #15803D; }}
+    QLabel#statusPill[state="error"]   {{ background: #FEE2E2; color: #B91C1C; }}
+
+    /* ---------- 卡片 ---------- */
+    QFrame#card {{
+        background: {SURFACE};
+        border: 1px solid {BORDER};
+        border-radius: 12px;
+    }}
+    QLabel#cardTitle {{
+        font-size: 15px;
+        font-weight: 600;
+        color: #111827;
+    }}
+    QLabel#fieldLabel {{
+        color: #4B5563;
+    }}
+    QLabel#infoCallout {{
+        background: #EEF4FE;
+        color: #1E4FA3;
+        border: 1px solid #D4E3FB;
+        border-radius: 8px;
+        padding: 10px 12px;
+    }}
+
+    /* ---------- 输入框 ---------- */
+    QLineEdit {{
+        background: {SURFACE};
+        border: 1px solid {BORDER_STRONG};
+        border-radius: 8px;
+        padding: 7px 10px;
+        selection-background-color: {ACCENT};
+    }}
+    QLineEdit:hover {{
+        border-color: #BCC6D4;
+    }}
+    QLineEdit:focus {{
+        border: 1px solid {ACCENT};
+    }}
+
+    /* ---------- 按钮 ---------- */
+    QPushButton {{
+        background: {SURFACE};
+        border: 1px solid {BORDER_STRONG};
+        border-radius: 8px;
+        padding: 8px 18px;
+        color: {TEXT};
+    }}
+    QPushButton:hover {{
+        background: #F3F6FB;
+        border-color: #BCC6D4;
+    }}
+    QPushButton:pressed {{
+        background: #E7ECF4;
+    }}
+    QPushButton:disabled {{
+        background: #F3F4F6;
+        border-color: #E5E7EB;
+        color: #A0A8B5;
+    }}
+    QPushButton#primaryButton {{
+        background: {ACCENT};
+        border: 1px solid {ACCENT};
+        color: white;
+        font-weight: 600;
+    }}
+    QPushButton#primaryButton:hover {{
+        background: {ACCENT_HOVER};
+        border-color: {ACCENT_HOVER};
+    }}
+    QPushButton#primaryButton:pressed {{
+        background: {ACCENT_PRESSED};
+        border-color: {ACCENT_PRESSED};
+    }}
+    QPushButton#primaryButton:disabled {{
+        background: #9DB8E8;
+        border-color: #9DB8E8;
+        color: #F4F7FD;
+    }}
+    QPushButton#ghostButton {{
+        background: transparent;
+        border: none;
+        color: {TEXT_MUTED};
+        padding: 6px 10px;
+    }}
+    QPushButton#ghostButton:hover {{
+        background: #F2F5FA;
+        color: {ACCENT};
+    }}
+
+    /* ---------- 欢迎页 ---------- */
+    QFrame#heroCard {{
+        border-radius: 16px;
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                    stop:0 #2A63C7, stop:1 #4A8BEE);
+    }}
+    QLabel#heroEyebrow {{
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 12px;
+        font-weight: 700;
+    }}
+    QLabel#heroTitle {{
+        color: white;
+        font-size: 28px;
+        font-weight: 700;
+    }}
+    QLabel#heroText {{
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 14px;
+    }}
+    QPushButton#heroPrimary {{
+        background: white;
+        border: none;
+        color: {ACCENT};
+        font-weight: 600;
+        padding: 9px 22px;
+    }}
+    QPushButton#heroPrimary:hover {{
+        background: #F0F5FE;
+    }}
+    QPushButton#heroSecondary {{
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        color: white;
+        padding: 9px 22px;
+    }}
+    QPushButton#heroSecondary:hover {{
+        background: rgba(255, 255, 255, 0.12);
+    }}
+    QLabel#bulletDot {{
+        color: {ACCENT};
+        font-size: 16px;
+    }}
+    QLabel#stepBadge {{
+        background: {ACCENT_SOFT};
+        color: {ACCENT};
+        border-radius: 11px;
+        font-size: 12px;
+        font-weight: 700;
+    }}
+    QLabel#listText {{
+        color: #374151;
+    }}
+
+    /* ---------- 日志 ---------- */
+    QFrame#logCard {{
+        background: #161B26;
+        border: 1px solid #161B26;
+        border-radius: 12px;
+    }}
+    QLabel#logTitle {{
+        color: #C9D1DE;
+        font-weight: 600;
+    }}
+    QPushButton#logClear {{
+        background: transparent;
+        border: 1px solid #2E3647;
+        border-radius: 6px;
+        color: #9AA4B5;
+        padding: 3px 12px;
+        font-size: 12px;
+    }}
+    QPushButton#logClear:hover {{
+        background: #222A39;
+        color: #D6DEEB;
+    }}
+    QTextEdit#logView {{
+        background: transparent;
+        border: none;
+        color: #D6DEEB;
+        font-family: "{mono_font}";
+        font-size: 13px;
+        selection-background-color: #34507F;
+    }}
+
+    /* ---------- 进度条 / 滚动条 / 状态栏 ---------- */
+    QProgressBar {{
+        background: #E3E8F0;
+        border: none;
+        border-radius: 2px;
+    }}
+    QProgressBar::chunk {{
+        background: {ACCENT};
+        border-radius: 2px;
+    }}
+    QScrollBar:vertical {{
+        background: transparent;
+        width: 10px;
+        margin: 2px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: #CBD2DD;
+        border-radius: 3px;
+        min-height: 32px;
+    }}
+    QTextEdit#logView QScrollBar::handle:vertical {{
+        background: #3A4458;
+    }}
+    QScrollBar:horizontal {{
+        background: transparent;
+        height: 10px;
+        margin: 2px;
+    }}
+    QScrollBar::handle:horizontal {{
+        background: #CBD2DD;
+        border-radius: 3px;
+        min-width: 32px;
+    }}
+    QScrollBar::add-line, QScrollBar::sub-line {{
+        width: 0; height: 0;
+    }}
+    QScrollBar::add-page, QScrollBar::sub-page {{
+        background: none;
+    }}
+    QStatusBar {{
+        background: {SURFACE};
+        border-top: 1px solid {BORDER};
+        color: {TEXT_MUTED};
+        font-size: 12px;
+        padding-left: 12px;
+    }}
+    QStatusBar::item {{
+        border: none;
+    }}
+    QToolTip {{
+        background: #111827;
+        color: white;
+        border: none;
+        padding: 6px 8px;
+    }}
+    """
+
+
+def apply_theme(app: QApplication):
+    """应用全局主题：Fusion 风格 + 调色板 + 样式表 + 平台合适的中文字体"""
+    app.setStyle("Fusion")
+
+    ui_font = _pick_font(UI_FONT_CANDIDATES, app.font().family())
+    mono_font = _pick_font(
+        MONO_FONT_CANDIDATES,
+        QFontDatabase.systemFont(QFontDatabase.FixedFont).family()
+    )
+
+    font = QFont(ui_font)
+    font.setPixelSize(14)
+    app.setFont(font)
+
+    palette = app.palette()
+    palette.setColor(QPalette.Window, QColor(BG))
+    palette.setColor(QPalette.Base, QColor(SURFACE))
+    palette.setColor(QPalette.Text, QColor(TEXT))
+    palette.setColor(QPalette.WindowText, QColor(TEXT))
+    palette.setColor(QPalette.ButtonText, QColor(TEXT))
+    palette.setColor(QPalette.Highlight, QColor(ACCENT))
+    palette.setColor(QPalette.HighlightedText, QColor("white"))
+    app.setPalette(palette)
+
+    app.setStyleSheet(build_stylesheet(ui_font, mono_font))
+
+
+def repolish(widget: QWidget):
+    """动态属性变化后刷新样式"""
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+    widget.update()
+
+
+def rounded_pixmap(path: Path, size: int, radius: int):
+    """把图片裁成圆角正方形（支持高分屏）"""
+    src = QPixmap(str(path))
+    if src.isNull():
+        return None
+    app = QApplication.instance()
+    dpr = app.devicePixelRatio() if app else 1.0
+    px = int(size * dpr)
+    src = src.scaled(px, px, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+    src = src.copy((src.width() - px) // 2, (src.height() - px) // 2, px, px)
+
+    out = QPixmap(px, px)
+    out.fill(Qt.transparent)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.Antialiasing)
+    clip = QPainterPath()
+    clip.addRoundedRect(0, 0, px, px, radius * dpr, radius * dpr)
+    painter.setClipPath(clip)
+    painter.drawPixmap(0, 0, src)
+    painter.end()
+    out.setDevicePixelRatio(dpr)
+    return out
+
+
+def make_card(title: str = ""):
+    """创建一个白色圆角卡片，返回 (card, 内容布局)"""
+    card = QFrame()
+    card.setObjectName("card")
+    layout = QVBoxLayout(card)
+    layout.setContentsMargins(20, 16, 20, 18)
+    layout.setSpacing(12)
+    title_label = None
+    if title:
+        title_label = QLabel(title)
+        title_label.setObjectName("cardTitle")
+        layout.addWidget(title_label)
+    card.title_label = title_label
+    return card, layout
+
+
+class NavButton(QPushButton):
+    """侧边栏导航按钮：编号徽标 + 文字"""
+
+    def __init__(self, badge: str, text: str, parent=None):
+        super().__init__(parent)
+        self.setObjectName("navButton")
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(38)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setSpacing(10)
+
+        self.badge = QLabel(badge)
+        self.badge.setObjectName("navBadge")
+        self.badge.setAlignment(Qt.AlignCenter)
+        self.badge.setFixedSize(26, 22)
+
+        self.text_label = QLabel(text)
+        self.text_label.setObjectName("navText")
+
+        for label in (self.badge, self.text_label):
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        layout.addWidget(self.badge)
+        layout.addWidget(self.text_label, 1)
+
+        self.toggled.connect(self._sync_state)
+
+    def _sync_state(self, checked: bool):
+        for label in (self.badge, self.text_label):
+            label.setProperty("active", checked)
+            repolish(label)
 
 
 class WorkerThread(QThread):
@@ -68,76 +547,186 @@ class BaseModuleWidget(QWidget):
         self.log_signal.connect(self._append_log_safe)
         self.init_ui()
     
+    STATUS_TEXT = {
+        "idle": "未运行",
+        "running": "运行中…",
+        "success": "已完成",
+        "error": "失败",
+    }
+
     def init_ui(self):
         """初始化界面"""
         layout = QVBoxLayout(self)
-        
-        # 标题
-        title = QLabel(f"[模块] {self.module_name}")
-        title.setFont(QFont("Noto Sans CJK SC", 20, QFont.Bold))  # 增大模块标题
-        layout.addWidget(title)
-        
-        # 文件选择区域
-        self.file_group = QGroupBox("[配置] 文件配置")
-        self.file_layout = QVBoxLayout()
-        self.file_group.setLayout(self.file_layout)
+        layout.setContentsMargins(36, 28, 36, 20)
+        layout.setSpacing(16)
+
+        # ---- 页面头部：步骤 / 标题 / 说明 / 状态 ----
+        header = QHBoxLayout()
+        header.setSpacing(16)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(4)
+
+        self.step_label = QLabel()
+        self.step_label.setObjectName("pageEyebrow")
+        self.step_label.setVisible(False)
+        title_col.addWidget(self.step_label)
+
+        title = QLabel(self.module_name)
+        title.setObjectName("pageTitle")
+        title_col.addWidget(title)
+
+        self.subtitle_label = QLabel()
+        self.subtitle_label.setObjectName("pageSubtitle")
+        self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.setVisible(False)
+        title_col.addWidget(self.subtitle_label)
+
+        header.addLayout(title_col, 1)
+
+        self.status_pill = QLabel()
+        self.status_pill.setObjectName("statusPill")
+        self.status_pill.setAlignment(Qt.AlignCenter)
+        header.addWidget(self.status_pill, 0, Qt.AlignTop)
+        self._set_status("idle")
+
+        layout.addLayout(header)
+
+        # ---- 参数配置卡片（子类往 self.file_layout 里添加内容） ----
+        self.file_group, self.file_layout = make_card("参数配置")
         layout.addWidget(self.file_group)
-        
-        # 操作按钮区域
+
+        # ---- 操作按钮 ----
         btn_layout = QHBoxLayout()
-        
-        self.check_btn = QPushButton("[检查] 检查文件")
+        btn_layout.setSpacing(10)
+
+        self.check_btn = QPushButton("检查文件")
+        self.check_btn.setCursor(Qt.PointingHandCursor)
+        self.check_btn.setMinimumHeight(40)
         self.check_btn.clicked.connect(self.check_files)
-        self.check_btn.setMinimumHeight(50)  # 增大按钮高度
-        self.check_btn.setFont(QFont("Noto Sans CJK SC", 13))
         btn_layout.addWidget(self.check_btn)
-        
-        self.run_btn = QPushButton("[执行] 开始执行")
+
+        self.run_btn = QPushButton("开始执行")
+        self.run_btn.setObjectName("primaryButton")
+        self.run_btn.setCursor(Qt.PointingHandCursor)
+        self.run_btn.setMinimumHeight(40)
+        self.run_btn.setMinimumWidth(120)
         self.run_btn.clicked.connect(self.execute)
-        self.run_btn.setMinimumHeight(50)  # 增大按钮高度
-        self.run_btn.setFont(QFont("Noto Sans CJK SC", 13, QFont.Bold))
-        self.run_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 14pt;")
         btn_layout.addWidget(self.run_btn)
-        
+
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-        
-        # 进度条
+
+        # ---- 进度条（细线，执行时显示） ----
         self.progress_bar = QProgressBar()
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setFixedHeight(4)
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
-        
-        # 日志输出区域
-        log_label = QLabel("[日志] 执行日志:")
-        layout.addWidget(log_label)
-        
+
+        # ---- 日志面板（深色终端风格） ----
+        log_card = QFrame()
+        log_card.setObjectName("logCard")
+        log_layout = QVBoxLayout(log_card)
+        log_layout.setContentsMargins(16, 12, 8, 10)
+        log_layout.setSpacing(8)
+
+        log_header = QHBoxLayout()
+        log_header.setContentsMargins(0, 0, 8, 0)
+        log_title = QLabel("执行日志")
+        log_title.setObjectName("logTitle")
+        log_header.addWidget(log_title)
+        log_header.addStretch()
+        clear_btn = QPushButton("清空")
+        clear_btn.setObjectName("logClear")
+        clear_btn.setCursor(Qt.PointingHandCursor)
+        clear_btn.clicked.connect(self.clear_log)
+        log_header.addWidget(clear_btn)
+        log_layout.addLayout(log_header)
+
         self.log_text = QTextEdit()
+        self.log_text.setObjectName("logView")
         self.log_text.setReadOnly(True)
-        self.log_text.setFont(QFont("Courier", 12))  # 增大日志字体
-        layout.addWidget(self.log_text)
-    
+        self.log_text.setPlaceholderText("点击「检查文件」或「开始执行」后，日志会显示在这里。")
+        log_palette = self.log_text.palette()
+        log_palette.setColor(QPalette.PlaceholderText, QColor("#5C677A"))
+        self.log_text.setPalette(log_palette)
+        log_layout.addWidget(self.log_text)
+
+        layout.addWidget(log_card, 1)
+
+    def finalize_layout(self, eyebrow: str = ""):
+        """
+        子类构造完成后调用：
+        - 把子类添加的说明文字移到页面标题下方
+        - 配置卡片为空时隐藏，只有提示时改名
+        """
+        if eyebrow:
+            self.step_label.setText(eyebrow)
+            self.step_label.setVisible(True)
+
+        descriptions = []
+        for i in range(self.file_layout.count()):
+            widget = self.file_layout.itemAt(i).widget()
+            if (isinstance(widget, QLabel) and widget.wordWrap()
+                    and not widget.objectName()):
+                descriptions.append(widget)
+
+        if descriptions:
+            self.subtitle_label.setText("\n".join(w.text() for w in descriptions))
+            self.subtitle_label.setVisible(True)
+            for widget in descriptions:
+                self.file_layout.removeWidget(widget)
+                widget.deleteLater()
+
+        # 只剩卡片标题时隐藏整个卡片
+        remaining = self.file_layout.count() - (1 if self.file_group.title_label else 0)
+        if remaining <= 0:
+            self.file_group.setVisible(False)
+        elif not self.file_group.findChildren(QLineEdit):
+            # 只有提示信息：去掉卡片外框，直接展示提示框
+            if self.file_group.title_label:
+                self.file_group.title_label.setVisible(False)
+            self.file_group.setObjectName("")
+            self.file_layout.setContentsMargins(0, 0, 0, 0)
+            repolish(self.file_group)
+
+    def _set_status(self, state: str):
+        """更新页面右上角的状态标签"""
+        self.status_pill.setText(self.STATUS_TEXT.get(state, state))
+        self.status_pill.setProperty("state", state)
+        repolish(self.status_pill)
+
+    def _show_status_message(self, message: str):
+        """在主窗口状态栏显示消息"""
+        window = self.window()
+        if isinstance(window, QMainWindow):
+            window.statusBar().showMessage(message)
+
     def add_file_input(self, label: str, default_path: str = "", is_dir: bool = False):
         """添加文件输入行"""
         row_layout = QHBoxLayout()
-        
-        label_widget = QLabel(label)
-        label_widget.setMinimumWidth(180)  # 增大标签宽度
-        label_widget.setFont(QFont("Noto Sans CJK SC", 12))
+        row_layout.setSpacing(10)
+
+        label_widget = QLabel(label.rstrip(":："))
+        label_widget.setObjectName("fieldLabel")
+        label_widget.setFixedWidth(150)
         row_layout.addWidget(label_widget)
-        
+
         line_edit = QLineEdit(default_path)
-        line_edit.setMinimumHeight(38)  # 增大输入框高度
-        line_edit.setFont(QFont("Noto Sans CJK SC", 12))
+        line_edit.setMinimumHeight(36)
+        line_edit.setToolTip(default_path)
+        line_edit.textChanged.connect(line_edit.setToolTip)
         row_layout.addWidget(line_edit, stretch=1)
-        
-        browse_btn = QPushButton("浏览...")
-        browse_btn.setMinimumHeight(38)
-        browse_btn.setFont(QFont("Noto Sans CJK SC", 11))
+
+        browse_btn = QPushButton("选择目录…" if is_dir else "选择文件…")
+        browse_btn.setCursor(Qt.PointingHandCursor)
+        browse_btn.setMinimumHeight(36)
         browse_btn.clicked.connect(lambda: self.browse_file(line_edit, is_dir))
         row_layout.addWidget(browse_btn)
-        
+
         self.file_layout.addLayout(row_layout)
-        
+
         return line_edit
     
     def browse_file(self, line_edit: QLineEdit, is_dir: bool = False):
@@ -199,13 +788,19 @@ class BaseModuleWidget(QWidget):
         self.progress_bar.setVisible(show)
         if show:
             self.progress_bar.setRange(0, 0)  # 不确定进度
-    
+            self._set_status("running")
+            self._show_status_message(f"正在执行：{self.module_name}")
+
     def on_task_finished(self, success: bool, message: str):
         """任务完成回调"""
         self.show_progress(False)
         self.run_btn.setEnabled(True)
         self.cleanup_logging()  # 清理日志处理器
-        
+        self._set_status("success" if success else "error")
+        self._show_status_message(
+            f"{self.module_name}：{'执行成功' if success else '执行失败'}"
+        )
+
         if success:
             self.log(f"{message}")
             QMessageBox.information(self, "成功", message)
@@ -889,10 +1484,10 @@ class BindingExtractorWidget(BaseModuleWidget):
         
         # 提示信息
         tip = QLabel(
-            "【提示】此功能需要先完成完整的排表流程\n"
-            "将提取couple和family类型的绑定人员，输出到绑定人员明细表.xlsx"
+            "此功能需要先完成完整的排表流程（步骤 01–10）。\n"
+            "将提取 couple 和 family 类型的绑定人员，输出到「绑定人员明细表.xlsx」。"
         )
-        tip.setStyleSheet("color: #2196F3; padding: 10px; background-color: #E3F2FD; border-radius: 5px;")
+        tip.setObjectName("infoCallout")
         tip.setWordWrap(True)
         self.file_layout.addWidget(tip)
     
@@ -983,112 +1578,259 @@ class MainWindow(QMainWindow):
     
     def init_ui(self):
         """初始化界面"""
-        self.setWindowTitle("Volunteer Scheduling System")
-        self.setGeometry(100, 100, 1400, 900)  # 增大窗口尺寸
-        
-        # 中心部件
+        self.setWindowTitle("志愿者排表系统")
+        if LOGO_PATH.exists():
+            self.setWindowIcon(QIcon(str(LOGO_PATH)))
+        self.resize(1280, 820)
+        self.setMinimumSize(1080, 680)
+
+        # 中心部件：左侧导航 + 右侧页面
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
-        layout = QVBoxLayout(central_widget)
-        
-        # 标题栏
-        title_label = QLabel("志愿者排表系统 - GUI 版本")
-        title_label.setFont(QFont("Noto Sans CJK SC", 24, QFont.Bold))  # 增大标题字体
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet("padding: 20px; background-color: #2196F3; color: white;")
-        layout.addWidget(title_label)
-        
-        # 标签页
-        self.tabs = QTabWidget()
-        self.tabs.setFont(QFont("Noto Sans CJK SC", 13))  # 增大标签页字体
-        layout.addWidget(self.tabs)
-        
-        # 创建各模块标签页
+
+        root = QHBoxLayout(central_widget)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        self.pages = QStackedWidget()
+        self.pages.setObjectName("pages")
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.setExclusive(True)
+
+        root.addWidget(self.create_sidebar())
+        root.addWidget(self.pages, 1)
+
+        # 创建各模块页面
         self.create_interview_tabs()
         self.create_scheduling_tabs()
-        
+        self.nav_layout.addStretch()
+
+        self.select_page(0)
+
         # 状态栏
         self.statusBar().showMessage("就绪")
-    
+
+    # ---------------- 导航 ----------------
+
+    def create_sidebar(self):
+        """创建左侧导航栏"""
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(248)
+
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(14, 18, 14, 12)
+        layout.setSpacing(6)
+
+        # 品牌区
+        brand = QHBoxLayout()
+        brand.setContentsMargins(6, 0, 0, 8)
+        brand.setSpacing(10)
+        logo = rounded_pixmap(LOGO_PATH, 38, 9) if LOGO_PATH.exists() else None
+        if logo is not None:
+            logo_label = QLabel()
+            logo_label.setPixmap(logo)
+            logo_label.setFixedSize(38, 38)
+            brand.addWidget(logo_label)
+        brand_text = QVBoxLayout()
+        brand_text.setSpacing(0)
+        brand_title = QLabel("志愿者排表系统")
+        brand_title.setObjectName("brandTitle")
+        brand_sub = QLabel("Volunteer Scheduling System")
+        brand_sub.setObjectName("brandSub")
+        brand_text.addWidget(brand_title)
+        brand_text.addWidget(brand_sub)
+        brand.addLayout(brand_text, 1)
+        layout.addLayout(brand)
+
+        # 导航列表（可滚动）
+        nav_scroll = QScrollArea()
+        nav_scroll.setObjectName("navScroll")
+        nav_scroll.setWidgetResizable(True)
+        nav_scroll.setFrameShape(QFrame.NoFrame)
+        nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        nav_inner = QWidget()
+        nav_inner.setObjectName("navInner")
+        self.nav_layout = QVBoxLayout(nav_inner)
+        self.nav_layout.setContentsMargins(0, 0, 0, 0)
+        self.nav_layout.setSpacing(2)
+        nav_scroll.setWidget(nav_inner)
+        layout.addWidget(nav_scroll, 1)
+
+        # 底部链接
+        footer = QHBoxLayout()
+        footer.setSpacing(4)
+        usage_btn = QPushButton("使用说明")
+        usage_btn.setObjectName("ghostButton")
+        usage_btn.setCursor(Qt.PointingHandCursor)
+        usage_btn.clicked.connect(self.show_usage)
+        about_btn = QPushButton("关于")
+        about_btn.setObjectName("ghostButton")
+        about_btn.setCursor(Qt.PointingHandCursor)
+        about_btn.clicked.connect(self.show_about)
+        footer.addWidget(usage_btn)
+        footer.addWidget(about_btn)
+        footer.addStretch()
+        layout.addLayout(footer)
+
+        return sidebar
+
+    def add_nav_section(self, title: str):
+        """添加导航分组标题"""
+        label = QLabel(title)
+        label.setObjectName("navSection")
+        self.nav_layout.addWidget(label)
+
+    def add_page(self, widget: QWidget, title: str, badge: str, eyebrow: str = ""):
+        """添加一个页面及其导航按钮"""
+        index = self.pages.addWidget(widget)
+        if isinstance(widget, BaseModuleWidget):
+            widget.finalize_layout(eyebrow)
+
+        button = NavButton(badge, title)
+        button.setToolTip(title)
+        self.nav_group.addButton(button, index)
+        button.clicked.connect(lambda _=False, i=index: self.select_page(i))
+        self.nav_layout.addWidget(button)
+        return index
+
+    def select_page(self, index: int):
+        """切换到指定页面"""
+        self.pages.setCurrentIndex(index)
+        button = self.nav_group.button(index)
+        if button is not None:
+            button.setChecked(True)
+
     def create_interview_tabs(self):
-        """创建面试模块标签页"""
+        """创建面试模块页面"""
         # 0. 快速入门
-        welcome_widget = self.create_welcome_widget()
-        self.tabs.addTab(welcome_widget, "快速入门")
-        
+        self.add_nav_section("开始")
+        self.add_page(self.create_welcome_widget(), "快速入门", "⌂")
+
+        self.add_nav_section("面试阶段")
         # 1. 汇总面试打分表
-        self.tabs.addTab(InterviewSummarizerWidget(), "[1] 汇总面试打分表")
-        
+        self.add_page(InterviewSummarizerWidget(), "汇总面试打分表", "01", "步骤 01 · 面试阶段")
         # 2. 分离已面试和未面试人员
-        self.tabs.addTab(InterviewSeparatorWidget(), "[2] 分离已/未面试人员")
-    
+        self.add_page(InterviewSeparatorWidget(), "分离已/未面试人员", "02", "步骤 02 · 面试阶段")
+
+    # ---------------- 欢迎页 ----------------
+
     def create_welcome_widget(self):
         """创建欢迎页面"""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # 欢迎标题
-        welcome_label = QLabel("欢迎使用志愿者排表系统")
-        welcome_label.setFont(QFont("Noto Sans CJK SC", 28, QFont.Bold))
-        welcome_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(welcome_label)
-        
-        # 添加志愿者图片
-        image_label = QLabel()
-        image_path = Path(__file__).parent / "src" / "image" / "volunteer.jpg"
-        if image_path.exists():
-            pixmap = QPixmap(str(image_path))
-            # 调整图片大小，保持比例
-            scaled_pixmap = pixmap.scaled(400, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            image_label.setPixmap(scaled_pixmap)
-            image_label.setAlignment(Qt.AlignCenter)
-            layout.addWidget(image_label)
-        
-        layout.addSpacing(20)
-        
-        # 功能介绍
-        intro_text = QLabel(
-            "本系统专为大型志愿者活动设计，提供从面试到排班的全流程自动化处理。\n\n"
-            "【核心功能】\n"
-            "面试打分表汇总与志愿者筛选\n"
-            "多维度资格审查（家属、情侣、团体）\n"
-            "智能小组划分和组长分配\n"
-            "复杂绑定关系处理\n"
-            "自动化排班算法\n"
-            "一键生成最终名单\n"
-            "绑定人员明细提取\n\n"
-            "【使用步骤】\n"
-            "1 准备输入文件（Excel 格式）\n"
-            "2 按照标签页顺序依次执行\n"
-            "3 查看实时日志了解进度\n"
-            "4 获取输出结果文件\n"
-            "5 可选：提取绑定人员明细\n\n"
-            "【快速开始】\n"
-            "点击左侧标签页开始使用，或查看菜单栏的帮助文档。"
-        )
-        intro_text.setFont(QFont("Noto Sans CJK SC", 14))
-        intro_text.setWordWrap(True)
-        intro_text.setAlignment(Qt.AlignLeft)
-        intro_text.setStyleSheet("padding: 25px; background-color: #f5f5f5; border-radius: 10px;")
-        layout.addWidget(intro_text)
-        
-        layout.addSpacing(20)
-        
-        # 快捷按钮
-        btn_layout = QHBoxLayout()
-        
+        scroll = QScrollArea()
+        scroll.setObjectName("pageScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+
+        page = QWidget()
+        page.setObjectName("welcomePage")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(36, 32, 36, 32)
+        layout.setSpacing(20)
+
+        # ---- 顶部 Hero ----
+        hero = QFrame()
+        hero.setObjectName("heroCard")
+        hero_layout = QHBoxLayout(hero)
+        hero_layout.setContentsMargins(32, 28, 32, 28)
+        hero_layout.setSpacing(28)
+
+        logo = rounded_pixmap(LOGO_PATH, 128, 20) if LOGO_PATH.exists() else None
+        if logo is not None:
+            logo_label = QLabel()
+            logo_label.setPixmap(logo)
+            logo_label.setFixedSize(128, 128)
+            hero_layout.addWidget(logo_label, 0, Qt.AlignVCenter)
+
+        hero_text = QVBoxLayout()
+        hero_text.setSpacing(8)
+        eyebrow = QLabel("欢迎使用")
+        eyebrow.setObjectName("heroEyebrow")
+        title = QLabel("志愿者排表系统")
+        title.setObjectName("heroTitle")
+        desc = QLabel("本系统专为大型志愿者活动设计，提供从面试到排班的全流程自动化处理。\n"
+                      "从左侧导航按步骤顺序依次执行即可。")
+        desc.setObjectName("heroText")
+        desc.setWordWrap(True)
+        hero_text.addWidget(eyebrow)
+        hero_text.addWidget(title)
+        hero_text.addWidget(desc)
+        hero_text.addSpacing(8)
+
+        hero_btns = QHBoxLayout()
+        hero_btns.setSpacing(10)
+        start_btn = QPushButton("开始第一步  →")
+        start_btn.setObjectName("heroPrimary")
+        start_btn.setCursor(Qt.PointingHandCursor)
+        start_btn.clicked.connect(lambda: self.select_page(1))
         help_btn = QPushButton("查看使用说明")
-        help_btn.setMinimumHeight(55)
-        help_btn.setFont(QFont("Noto Sans CJK SC", 14))
+        help_btn.setObjectName("heroSecondary")
+        help_btn.setCursor(Qt.PointingHandCursor)
         help_btn.clicked.connect(self.show_usage)
-        btn_layout.addWidget(help_btn)
-      
-        layout.addLayout(btn_layout)
-        
+        hero_btns.addWidget(start_btn)
+        hero_btns.addWidget(help_btn)
+        hero_btns.addStretch()
+        hero_text.addLayout(hero_btns)
+
+        hero_layout.addLayout(hero_text, 1)
+        layout.addWidget(hero)
+
+        # ---- 核心功能 / 使用步骤 ----
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(20)
+
+        features_card, features_layout = make_card("核心功能")
+        features = [
+            "面试打分表汇总与志愿者筛选",
+            "多维度资格审查（家属、情侣、团体）",
+            "智能小组划分和组长分配",
+            "复杂绑定关系处理",
+            "自动化排班算法",
+            "一键生成最终名单",
+            "绑定人员明细提取",
+        ]
+        for text in features:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            dot = QLabel("•")
+            dot.setObjectName("bulletDot")
+            dot.setFixedWidth(10)
+            item = QLabel(text)
+            item.setObjectName("listText")
+            row.addWidget(dot)
+            row.addWidget(item, 1)
+            features_layout.addLayout(row)
+        features_layout.addStretch()
+        cards_row.addWidget(features_card, 1)
+
+        steps_card, steps_layout = make_card("使用步骤")
+        steps = [
+            "准备输入文件（Excel 格式）",
+            "按照左侧导航顺序依次执行",
+            "查看实时日志了解进度",
+            "获取输出结果文件",
+            "可选：提取绑定人员明细",
+        ]
+        for i, text in enumerate(steps, 1):
+            row = QHBoxLayout()
+            row.setSpacing(12)
+            badge = QLabel(str(i))
+            badge.setObjectName("stepBadge")
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setFixedSize(22, 22)
+            item = QLabel(text)
+            item.setObjectName("listText")
+            row.addWidget(badge)
+            row.addWidget(item, 1)
+            steps_layout.addLayout(row)
+        steps_layout.addStretch()
+        cards_row.addWidget(steps_card, 1)
+
+        layout.addLayout(cards_row)
         layout.addStretch()
-        
-        return widget
+
+        scroll.setWidget(page)
+        return scroll
     
     def open_config(self):
         """打开配置文件"""
@@ -1112,39 +1854,34 @@ class MainWindow(QMainWindow):
             )
     
     def create_scheduling_tabs(self):
-        """创建排表模块标签页"""
+        """创建排表模块页面"""
+        self.add_nav_section("排表阶段")
+        stage = "排表阶段"
         # 3. 基本信息核查和收集
-        self.tabs.addTab(PreCheckerWidget(), "[3] 基本信息核查")
-        
+        self.add_page(PreCheckerWidget(), "基本信息核查", "03", f"步骤 03 · {stage}")
         # 4. 正式普通志愿者和储备志愿者拆分
-        self.tabs.addTab(VolunteerSplitterWidget(), "[4] 志愿者拆分")
-        
+        self.add_page(VolunteerSplitterWidget(), "志愿者拆分", "04", f"步骤 04 · {stage}")
         # 5. 家属志愿者资格审查
-        self.tabs.addTab(FamilyCheckerWidget(), "[5] 家属资格审查")
-        
+        self.add_page(FamilyCheckerWidget(), "家属资格审查", "05", f"步骤 05 · {stage}")
         # 6. 情侣志愿者资格核查
-        self.tabs.addTab(CoupleCheckerWidget(), "[6] 情侣资格核查")
-        
+        self.add_page(CoupleCheckerWidget(), "情侣资格核查", "06", f"步骤 06 · {stage}")
         # 7. 小组划分及组长分配
-        self.tabs.addTab(GroupAllocatorWidget(), "[7] 小组划分")
-        
+        self.add_page(GroupAllocatorWidget(), "小组划分", "07", f"步骤 07 · {stage}")
         # 8. 绑定集合生成
-        self.tabs.addTab(BinderWidget(), "[8] 绑定集合生成")
-        
+        self.add_page(BinderWidget(), "绑定集合生成", "08", f"步骤 08 · {stage}")
         # 9. 排表主程序
-        self.tabs.addTab(MainSchedulerWidget(), "[9] 排表主程序")
-        
+        self.add_page(MainSchedulerWidget(), "排表主程序", "09", f"步骤 09 · {stage}")
         # 10. 总表拆分和表格整合
-        self.tabs.addTab(FinalizerWidget(), "[10] 总表拆分整合")
-        
+        self.add_page(FinalizerWidget(), "总表拆分整合", "10", f"步骤 10 · {stage}")
+
+        self.add_nav_section("附加功能")
         # 11. 绑定人员提取
-        self.tabs.addTab(BindingExtractorWidget(), "[11] 绑定人员提取")
-    
+        self.add_page(BindingExtractorWidget(), "绑定人员提取", "11", "步骤 11 · 附加功能（可选）")
+
     def create_menu_bar(self):
         """创建菜单栏"""
         menubar = self.menuBar()
-        menubar.setFont(QFont("Noto Sans CJK SC", 11))
-        
+
         # 文件菜单
         file_menu = menubar.addMenu("文件")
         
@@ -1240,7 +1977,6 @@ class MainWindow(QMainWindow):
         msg = QMessageBox(self)
         msg.setWindowTitle("使用说明")
         msg.setText(usage_text)
-        msg.setFont(QFont("Noto Sans CJK SC", 14))
         msg.exec_()
     
     def show_about(self):
@@ -1283,17 +2019,20 @@ def main():
         except:
             pass
     
+    # 高分屏支持（需在创建 QApplication 之前设置）
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # Windows 常见的 125% / 150% 缩放：按实际比例缩放，
+    # 否则 Qt 默认四舍五入成 1x / 2x，界面会偏小或偏大
+    if hasattr(Qt, "HighDpiScaleFactorRoundingPolicy"):
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
+
     app = QApplication(sys.argv)
-    
-    # 设置应用样式
-    app.setStyle("Fusion")
-    
-    # 设置中文字体（使用已安装的字体）
-    font = QFont()
-    # 优先使用 Noto Sans CJK SC，其次文泉驿微米黑
-    font.setFamily("Noto Sans CJK SC")
-    font.setPointSize(13)  # 增大到 13 号字体
-    app.setFont(font)
+
+    # 应用主题（Fusion 风格 + 样式表 + 自动选择系统中文字体）
+    apply_theme(app)
     
     # 确保 Qt 使用 UTF-8
     import codecs
